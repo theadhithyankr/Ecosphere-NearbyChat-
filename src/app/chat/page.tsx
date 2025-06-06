@@ -7,48 +7,59 @@ import MapView from '@/components/chat/MapView';
 import ChatMessage from '@/components/chat/ChatMessage';
 import MessageInput from '@/components/chat/MessageInput';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MessagesSquare } from 'lucide-react';
 
-// Mock Data
-const MOCK_NEARBY_USERS: User[] = [
-  { id: 'user2', username: 'Alice', latitude: 34.0522, longitude: -118.2437 },
-  { id: 'user3', username: 'Bob', latitude: 34.0550, longitude: -118.2450 },
-  { id: 'user4', username: 'Charlie', latitude: 34.0500, longitude: -118.2400 },
-];
-
-const INITIAL_MESSAGES: Message[] = [
-  { id: 'msg1', userId: 'user2', username: 'Alice', text: 'Hey everyone! Anyone around?', timestamp: new Date(Date.now() - 1000 * 60 * 5), isSender: false },
-  { id: 'msg2', userId: 'user3', username: 'Bob', text: "Hi Alice! I'm nearby.", timestamp: new Date(Date.now() - 1000 * 60 * 3), isSender: false },
-];
-
-
 export default function ChatPage() {
   const { currentUser } = useAuth();
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
-  const [nearbyUsers, setNearbyUsers] = useState<User[]>(MOCK_NEARBY_USERS);
+  const { toast } = useToast();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [nearbyUsers, setNearbyUsers] = useState<User[]>([]);
   
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  // Mock fetching user location and nearby users
   useEffect(() => {
     if (currentUser) {
-      // Simulate fetching location
-      // navigator.geolocation.getCurrentPosition(position => { ... });
-      
-      // Add current user to nearby users list if not already there (for map display)
-      setNearbyUsers(prevUsers => {
-        if (!prevUsers.find(u => u.id === currentUser.id)) {
-          return [...prevUsers, { ...currentUser, latitude: 34.0530, longitude: -118.2420 }]; // Mock coords for current user
-        }
-        return prevUsers;
-      });
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude } = position.coords;
+            const userWithLocation: User = {
+              ...currentUser,
+              latitude,
+              longitude,
+            };
+            setNearbyUsers([userWithLocation]);
+            toast({
+              title: "Location shared",
+              description: "Your location is now visible on the map.",
+            });
+          },
+          (error) => {
+            console.error("Error getting location:", error);
+            toast({
+              variant: "destructive",
+              title: "Location Error",
+              description: "Could not retrieve your location. Please ensure location services are enabled and permissions are granted.",
+            });
+            // Add current user without location to still show them in lists if needed, or handle differently
+            setNearbyUsers([{ ...currentUser }]); 
+          }
+        );
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Geolocation Not Supported",
+          description: "Your browser does not support geolocation.",
+        });
+        setNearbyUsers([{ ...currentUser }]);
+      }
     }
-  }, [currentUser]);
+  }, [currentUser, toast]);
 
   useEffect(() => {
-    // Scroll to bottom when new messages are added
     if (scrollAreaRef.current) {
       const viewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]');
       if (viewport) {
@@ -70,11 +81,36 @@ export default function ChatPage() {
       isSender: true,
     };
     setMessages(prevMessages => [...prevMessages, newMessage]);
+
+    // Simulate receiving a message back after a short delay for demo purposes
+    setTimeout(() => {
+      if (nearbyUsers.length > 1 || (nearbyUsers.length === 1 && nearbyUsers[0].id !== currentUser.id)) {
+        const otherUser = nearbyUsers.find(u => u.id !== currentUser.id) || {id: "echo_bot", username: "EchoBot"};
+         const botMessage: Message = {
+          id: `msg_bot_${Date.now()}`,
+          userId: otherUser.id,
+          username: otherUser.username,
+          text: `Echo: "${text}"`,
+          timestamp: new Date(),
+          isSender: false,
+        };
+        setMessages(prevMessages => [...prevMessages, botMessage]);
+      } else if (messages.length === 0 && nearbyUsers.length <=1 ) { // Only if it's the first message and no other users
+         const botMessage: Message = {
+          id: `msg_bot_welcome_${Date.now()}`,
+          userId: "echo_bot_welcome",
+          username: "EchoSphere Guide",
+          text: "Welcome to the chat! It seems you're the first one here. Your messages will be seen by others as they join your sphere.",
+          timestamp: new Date(),
+          isSender: false,
+        };
+        setMessages(prevMessages => [...prevMessages, botMessage]);
+      }
+    }, 1500);
   };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-var(--header-height)-5rem)] md:h-[calc(100vh-var(--header-height)-3rem)]"> {/* Adjust for header and padding */}
-      {/* Left Column: Map and User Info */}
       <div className="lg:col-span-1 flex flex-col gap-6">
         <MapView nearbyUsers={nearbyUsers} />
         <Card className="hidden lg:block shadow-lg">
@@ -86,13 +122,12 @@ export default function ChatPage() {
                     EchoSphere connects you with people in your immediate vicinity (approx. 1km). Send messages into the sphere and see who responds!
                 </p>
                 <p className="text-sm text-muted-foreground mt-2">
-                    Currently showing <strong>{nearbyUsers.length}</strong> users nearby (including you).
+                    Currently showing <strong>{nearbyUsers.filter(u => u.latitude && u.longitude).length}</strong> user(s) with location on the map.
                 </p>
             </CardContent>
         </Card>
       </div>
 
-      {/* Right Column: Chat Area */}
       <Card className="lg:col-span-2 flex flex-col h-full shadow-lg">
         <CardHeader className="border-b">
           <CardTitle className="text-xl font-headline flex items-center gap-2">
@@ -105,6 +140,13 @@ export default function ChatPage() {
             {messages.map(msg => (
               <ChatMessage key={msg.id} message={msg} currentUser={currentUser} />
             ))}
+            {messages.length === 0 && (
+              <div className="text-center text-muted-foreground py-8">
+                <MessagesSquare size={48} className="mx-auto mb-2" />
+                <p>No messages yet. Send a message to start chatting!</p>
+                <p className="text-xs mt-1">Your location needs to be shared to see yourself on the map.</p>
+              </div>
+            )}
           </div>
         </ScrollArea>
         <MessageInput onSendMessage={handleSendMessage} />
