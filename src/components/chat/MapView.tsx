@@ -35,6 +35,7 @@ export default function MapView({ nearbyUsers }: MapViewProps) {
     setPlaceholderUrl(`https://placehold.co/${mapDimensions.width}x${mapDimensions.height}.png?time=${Date.now()}`);
   }, [mapDimensions]);
 
+  const usersWithLocation = nearbyUsers.filter(user => user.latitude !== undefined && user.longitude !== undefined);
 
   return (
     <Card className="shadow-lg">
@@ -58,12 +59,14 @@ export default function MapView({ nearbyUsers }: MapViewProps) {
                 }}
             />
            )}
-          {nearbyUsers.map((user, index) => (
+          {usersWithLocation.map((user, index) => (
             <UserMarker key={user.id} user={user} style={getMockPosition(index)} />
           ))}
         </div>
-        {nearbyUsers.length === 0 && (
-          <p className="text-sm text-muted-foreground mt-2 text-center">No users nearby. You're the first one here!</p>
+        {usersWithLocation.length === 0 && (
+          <p className="text-sm text-muted-foreground mt-2 text-center">
+            No users with shared location on the map. Share yours to appear!
+          </p>
         )}
       </CardContent>
     </Card>
